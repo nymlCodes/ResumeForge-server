@@ -8,6 +8,9 @@ import Groq from "groq-sdk";
 const uri = process.env.MONGO_URI as string;
 const port = Number(process.env.PORT) || 5000;
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Configurable so a future Groq deprecation is a one-line env change, not a redeploy hunt.
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+
 if (!uri) {
   throw new Error("MONGO_URI environment variable is missing!");
 }
@@ -47,14 +50,10 @@ async function run() {
     // ============================================================
     // 2. REGISTER API ENDPOINTS (Before 404 Fallback handlers)
     // ============================================================
-
-
-    await db.collection("user").updateMany(
-      { emailVerified: false },
-      { $set: { emailVerified: true } }
-    );
-
-
+    // NOTE: the one-off emailVerified migration has been removed from here.
+    // Run it as its own standalone script (fix-email-verified.ts) instead —
+    // it does not belong in the server startup path since it would otherwise
+    // re-run on every restart/redeploy.
 
     // Resumes POST Endpoint
     app.post("/api/resumes", async (req: Request, res: Response, next: NextFunction): Promise<any> => {
@@ -119,7 +118,6 @@ async function run() {
             filter.location = new RegExp(location.trim(), "i");
           }
 
-          // Skill filter (matches any skill in the array)
           // Skill filter (matches any skill in the array)
           if (skill.trim()) {
             filter.skills = new RegExp(skill.trim(), "i");
@@ -282,7 +280,7 @@ Experience: ${JSON.stringify(resume.experience, null, 2)}
 Education: ${JSON.stringify(resume.education, null, 2)}`;
 
           const completion = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: GROQ_MODEL,
             messages: [{ role: "user", content: prompt }],
             temperature: 0.4,
             max_tokens: 700,
@@ -300,11 +298,6 @@ Education: ${JSON.stringify(resume.education, null, 2)}`;
         }
       }
     );
-
-
-
-
-
 
     // Chat Endpoint (Groq) — conversational Q&A about a resume
     app.post(
@@ -351,7 +344,7 @@ Education: ${JSON.stringify(resume.education, null, 2)}`;
           ];
 
           const completion = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: GROQ_MODEL,
             messages,
             temperature: 0.5,
             max_tokens: 500,
@@ -365,30 +358,6 @@ Education: ${JSON.stringify(resume.education, null, 2)}`;
         }
       }
     );
-
-    // Resumes GET Endpoint (single, by id) — useful for a detail page later
-    // app.get(
-    //   "/api/resumes/:id",
-    //   async (req: Request, res: Response, next: NextFunction): Promise<any> => {
-    //     try {
-    //       const { id } = req.params;
-
-    //       if (!ObjectId.isValid(id)) {
-    //         return res.status(400).json({ message: "Invalid resume id." });
-    //       }
-
-    //       const resume = await resumeCollection.findOne({ _id: new ObjectId(id) });
-
-    //       if (!resume) {
-    //         return res.status(404).json({ message: "Resume not found." });
-    //       }
-
-    //       return res.status(200).json({ success: true, resume });
-    //     } catch (error) {
-    //       next(error);
-    //     }
-    //   }
-    // );
 
     // Posts POST Endpoint
     app.post("/api/posts", async (req: Request, res: Response, next: NextFunction): Promise<any> => {
